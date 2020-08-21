@@ -5,14 +5,17 @@ from __future__ import print_function
 import tensorflow as tf
 from scipy import misc
 import cv2
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as pltexi
 import numpy as np
 import argparse
 import facenet
 import detect_face
 import os
+from PIL import Image
 from os.path import join as pjoin
 import sys
+sys.path.append(r'C:\Users\nrdas\Downloads\FaceID\liveness_model')
+from keras_liveness import livenessDetection
 import time
 import copy
 import math
@@ -22,10 +25,12 @@ from sklearn.svm import SVC
 from livenessmodel import get_liveness_model
 import joblib
 pred = [[0]]
-os.environ['KERAS_BACKEND'] = 'tensorflow'
 
 
 print('Creating networks and loading parameters')
+
+# livemodel = load_model(r'C:\Users\nrdas\Downloads\FaceID\liveness_model\model\liveness.model')
+# lenet = pickle.loads(open(r'C:\Users\nrdas\Downloads\FaceID\liveness_model\model\le.pickle', 'rb').read())
 
 
 with tf.Graph().as_default():
@@ -33,8 +38,7 @@ with tf.Graph().as_default():
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False))
     with sess.as_default():
         pnet, rnet, onet = detect_face.create_mtcnn(sess, 'models')
-        kmodel = get_liveness_model()
-        kmodel.load_weights("live_model\\live_model.h5")
+        detect = livenessDetection()
         minsize = 20  # minimum size of face
         threshold = [0.6, 0.7, 0.7]  # three steps's threshold
         factor = 0.709  # scale factor
@@ -44,7 +48,7 @@ with tf.Graph().as_default():
         image_size = 182
         input_image_size = 160
 
-        HumanNames = ['himanshu','nitish', 'unauthorized']    #train human name
+        HumanNames = ['himanshu', 'nitish', 'unauthorized']
 
         print('Loading feature extraction model')
         modeldir = '20170511-185253\\20170511-185253.pb'
@@ -59,6 +63,7 @@ with tf.Graph().as_default():
         classifier_filename_exp = os.path.expanduser(classifier_filename)
         with open(classifier_filename_exp, 'rb') as infile:
             (model, class_names) = pickle.load(infile)
+            # model = pickle.load(infile)
             print('load classifier file-> %s' % classifier_filename_exp)
 
         video_capture = cv2.VideoCapture(0)
@@ -79,24 +84,7 @@ with tf.Graph().as_default():
 
             curTime = time.time()    # calc fps
             timeF = frame_interval
-            '''
-            if len(input_vid) < 24:
-                liveimg = cv2.cvtColor(liveimg, cv2.COLOR_BGR2GRAY)
-                input_vid.append(liveimg)
-            else:
-                liveimg = cv2.cvtColor(liveimg, cv2.COLOR_BGR2GRAY)
-                input_vid.append(liveimg)
-                inp = np.array([input_vid[-24:]])
-                inp = inp/255
-                inp = inp.reshape(1,24,100,100,1)
-                pred = kmodel.predict(inp)
-                input_vid = input_vid[-5:]
-            '''
-            if 1 - pred[0][0] < .95:
-                print('fake person tho')
-                print(pred[0][0])
-                continue
-            print('liveness is', pred[0][0])
+
             if (c % timeF == 0):
                 find_results = []
 
@@ -110,13 +98,14 @@ with tf.Graph().as_default():
                 if nrof_faces > 0:
                     det = bounding_boxes[:, 0:4]
                     img_size = np.asarray(frame.shape)[0:2]
-
-                    cropped = []
-                    scaled = []
-                    scaled_reshape = []
-                    bb = np.zeros((nrof_faces,4), dtype=np.int32)
+                    bb = np.zeros((nrof_faces, 4), dtype=np.int32)
 
                     for i in range(nrof_faces):
+                        
+                        cropped = []
+                        scaled = []
+                        scaled_reshape = []
+                        
                         emb_array = np.zeros((1, embedding_size))
 
                         bb[i][0] = det[i][0]
@@ -128,27 +117,30 @@ with tf.Graph().as_default():
                         if bb[i][0] <= 0 or bb[i][1] <= 0 or bb[i][2] >= len(frame[0]) or bb[i][3] >= len(frame):
                             print('face is inner of range!')
                             continue
-
+                        
                         cropped.append(frame[bb[i][1]:bb[i][3], bb[i][0]:bb[i][2], :])
+
+                        if not(detect.run_inf2(cropped[0])):
+                            print('SKIPPING A FACE AS IT IS FAKE')
+                            continue
+
                         cropped[0] = facenet.flip(cropped[0], False)
-                        scaled.append(misc.imresize(cropped[0], (image_size, image_size), interp='bilinear'))
+                        # scaled.append(misc.imresize(cropped[0], (image_size, image_size), interp='bilinear'))
+                        scaled.append(np.array(Image.fromarray(cropped[0]).resize((image_size, image_size), resample=Image.BILINEAR)))
                         scaled[0] = cv2.resize(scaled[0], (input_image_size,input_image_size),
                                                interpolation=cv2.INTER_CUBIC)
                         scaled[0] = facenet.prewhiten(scaled[0])
-                        scaled_reshape.append(scaled[0].reshape(-1,input_image_size,input_image_size,3))
+                        scaled_reshape.append(scaled[0].reshape(-1, input_image_size, input_image_size,3))
+                        # print(cropped[0].shape, scaled[0].shape, scaled_reshape[0].shape)
+
                         feed_dict = {images_placeholder: scaled_reshape[0], phase_train_placeholder: False}
                         emb_array[0, :] = sess.run(embeddings, feed_dict=feed_dict)
                         predictions = model.predict_proba(emb_array)
-                        # sc = np.expand_dims(np.repeat(0.9, predictions.shape[0]), axis=0)
-                        # predictions = np.concatenate((predictions, sc), axis=1)                       
                         best_class_indices = np.argmax(predictions, axis=1)
-                        
-                        
-                        # Create binary classifier for each authorized user
+
+                        # Create binary classifier for each authorized user ?
                         # if new input face is negative for every classifier, it's unrecognized
                         # if new input passes on one of the classifiers it is that person
-                        
-                        
                         
                         print('YOOOOOOOOOOOOOOOOOOOOOOOOOOO', best_class_indices, predictions)
                         best_class_probabilities = predictions[np.arange(len(best_class_indices)), best_class_indices]
@@ -170,6 +162,7 @@ with tf.Graph().as_default():
             prevTime = curTime
             fps = 1 / (sec)
             str = 'FPS: %2.3f' % fps
+            # c+=1
             text_fps_x = len(frame[0]) - 150
             text_fps_y = 20
             cv2.putText(frame, str, (text_fps_x, text_fps_y),
