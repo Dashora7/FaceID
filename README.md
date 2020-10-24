@@ -14,3 +14,4 @@ a stream.
 
 There is a model for detecting liveness to prevent spoofing (i.e.showing a photo of someone to the camera).
 
+I have some of my own images and alignments as an example
