@@ -47,8 +47,8 @@ with tf.Graph().as_default():
         batch_size = 1000
         image_size = 182
         input_image_size = 160
-
-        HumanNames = ['himanshu', 'nitish', 'unauthorized']
+		
+        HumanNames = ['nitish', 'unauthorized']
 
         print('Loading feature extraction model')
         modeldir = '20170511-185253\\20170511-185253.pb'
